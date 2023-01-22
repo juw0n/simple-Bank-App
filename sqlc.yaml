@@ -1,0 +1,9 @@
+version: "1"
+packages:
+  - name: "sqlcDB"
+    path: "./db/sqlc"
+    queries: "./db/query/"
+    schema: "./db/migration/"
+    engine: "postgresql"
+    emit_interface: false
+    emit_json_tags: true
