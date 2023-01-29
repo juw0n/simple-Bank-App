@@ -17,17 +17,16 @@ func TestTransferTx(t *testing.T) {
 	fmt.Println(">> before:", account1.Balance, account2.Balance)
 
 	// run n concurrent transfer transaction
-	n := 2
+	n := 5
 	amount := int64(10)
 
 	errs := make(chan error)
 	results := make(chan TransferTxResult)
 
 	for i := 0; i < n; i++ {
-		txName := fmt.Sprintf("tx %d", i+1)
+		// var txKey = struct{}{}
 		go func() {
-			ctx := context.WithValue(context.Background(), txKey, txName)
-			result, err := store.TransferTX(ctx, TransferTxParams{
+			result, err := store.TransferTX(context.Background(), TransferTxParams{
 				FromAccountID: account1.ID,
 				ToAccountID:   account2.ID,
 				Amount:        amount,
@@ -37,7 +36,6 @@ func TestTransferTx(t *testing.T) {
 			results <- result
 		}()
 	}
-
 	// checking result
 	existed := make(map[int]bool)
 
@@ -56,18 +54,18 @@ func TestTransferTx(t *testing.T) {
 		assert.Equal(t, amount, transfer.Amount)
 		assert.NotZero(t, transfer.ID)
 		assert.NotZero(t, transfer.CreatedAt)
-
+		// to confirm that the transfer was created in the DB
 		_, err = store.GetTransfer(context.Background(), transfer.ID)
 		assert.NoError(t, err)
 
-		// checking enrty
+		// checking Account enrty of the result
 		fromEntry := result.FromEntry
 		assert.NotEmpty(t, fromEntry)
 		assert.Equal(t, account1.ID, fromEntry.AccountID)
 		assert.Equal(t, -amount, fromEntry.Amount)
 		assert.NotZero(t, fromEntry.ID)
 		assert.NotZero(t, fromEntry.CreatedAt)
-
+		// to confirm that an entry was made into the DB
 		_, err = store.GetEntry(context.Background(), fromEntry.ID)
 		assert.NoError(t, err)
 
@@ -81,8 +79,8 @@ func TestTransferTx(t *testing.T) {
 		_, err = store.GetEntry(context.Background(), toEntry.ID)
 		assert.NoError(t, err)
 
-		// USING TEST DRIVEN
-		// checking Account
+		// // USING TEST DRIVEN
+		// // checking Account
 		fromAccount := result.FromAccount
 		assert.NotEmpty(t, fromAccount)
 		assert.Equal(t, account1.ID, fromAccount.ID)
@@ -93,8 +91,7 @@ func TestTransferTx(t *testing.T) {
 
 		// Printing the account balance after each transaction
 		fmt.Println(">> Tx:", fromAccount.Balance, toAccount.Balance)
-
-		// check accounts' balance
+		// // check accounts' balance
 		diff1 := account1.Balance - fromAccount.Balance
 		diff2 := toAccount.Balance - account2.Balance
 		assert.Equal(t, diff1, diff2)
@@ -114,9 +111,62 @@ func TestTransferTx(t *testing.T) {
 	updatedAccount2, err := testQueries.GetAccount(context.Background(), account2.ID)
 	assert.NoError(t, err)
 
-	// Printing the account  balance after transaction
+	// Printing the account balance after transaction
 	fmt.Println(">> after:", updatedAccount1.Balance, updatedAccount2.Balance)
 
 	assert.Equal(t, account1.Balance-int64(n)*amount, updatedAccount1.Balance)
 	assert.Equal(t, account2.Balance+int64(n)*amount, updatedAccount2.Balance)
+}
+
+func TestTransferTxDeadlock(t *testing.T) {
+	store := NewStore(testDB)
+
+	account1 := createRandomAccount(t)
+	account2 := createRandomAccount(t)
+	// Printing the account  balance before transaction
+	fmt.Println(">> before:", account1.Balance, account2.Balance)
+
+	// run n concurrent transfer transaction
+	n := 10
+	amount := int64(10)
+	errs := make(chan error)
+
+	for i := 0; i < n; i++ {
+		fromAccountID := account1.ID
+		toAccountID := account2.ID
+
+		if i%2 == 1 {
+			fromAccountID = account2.ID
+			toAccountID = account1.ID
+		}
+
+		go func() {
+			_, err := store.TransferTX(context.Background(), TransferTxParams{
+				FromAccountID: fromAccountID,
+				ToAccountID:   toAccountID,
+				Amount:        amount,
+			})
+
+			errs <- err
+		}()
+	}
+	// checking result
+
+	for i := 0; i < n; i++ {
+		err := <-errs
+		assert.NoError(t, err)
+	}
+
+	//  checking the final updated balance
+	updatedAccount1, err := testQueries.GetAccount(context.Background(), account1.ID)
+	assert.NoError(t, err)
+
+	updatedAccount2, err := testQueries.GetAccount(context.Background(), account2.ID)
+	assert.NoError(t, err)
+
+	// Printing the account balance after transaction
+	fmt.Println(">> after:", updatedAccount1.Balance, updatedAccount2.Balance)
+
+	assert.Equal(t, account1.Balance, updatedAccount1.Balance)
+	assert.Equal(t, account2.Balance, updatedAccount2.Balance)
 }
