@@ -46,6 +46,9 @@ jobs:
     - name: check out code into the Go Module directory
       uses: actions/checkout@v3
 
+    - name: Install sql-migrtae
+      run: go install github.com/rubenv/sql-migrate/...@latest     
+
     - name: Run Migrations
       run: make migrateup
 
