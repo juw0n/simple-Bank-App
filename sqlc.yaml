@@ -7,3 +7,4 @@ packages:
     engine: "postgresql"
     emit_interface: false
     emit_json_tags: true
+    emit_empty_slices: true
